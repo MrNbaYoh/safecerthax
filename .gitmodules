@@ -1,0 +1,6 @@
+[submodule "certhax/certhax"]
+	path = certhax/certhax
+	url = git@github.com:TuxSH/kernelhaxcode_3ds.git
+[submodule "certhax/kernelhaxcode_3ds"]
+	path = certhax/kernelhaxcode_3ds
+	url = git@github.com:TuxSH/kernelhaxcode_3ds.git
