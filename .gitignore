@@ -162,5 +162,5 @@ dmypy.json
 
 # End of https://www.gitignore.io/api/c,python
 
-certhax/certhax.bin
+safecerthax/safecerthax.bin
 certificates
