@@ -1,8 +1,3 @@
-
-# Created by https://www.gitignore.io/api/c
-# Edit at https://www.gitignore.io/?templates=c
-
-### C ###
 # Prerequisites
 *.d
 
@@ -56,6 +51,11 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# End of https://www.gitignore.io/api/c
+*.3dsx
+*.smdh
+.vscode/
+build/
 
-*.bin
+kernelhaxcode_3ds.bin
+arm11/arm11.bin
+arm9/arm9.bin

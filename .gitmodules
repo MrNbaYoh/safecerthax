@@ -1,6 +1,3 @@
-[submodule "safecerthax/kernelhaxcode_3ds"]
-	path = safecerthax/kernelhaxcode_3ds
+[submodule "kernelhaxcode_3ds"]
+	path = kernelhaxcode_3ds
 	url = git@github.com:TuxSH/kernelhaxcode_3ds.git
-[submodule "mitmproxy"]
-	path = mitmproxy
-	url = git@github.com:MrNbaYoh/mitmproxy.git
