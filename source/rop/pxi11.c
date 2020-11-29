@@ -105,7 +105,7 @@ u32 setupPxi11Stage1RopBuffer(u32* buffer) {
   const u32 fileoffset = 0;
   const char filename[] = "SafeB9SInstaller.bin";
 
-  const u32 size = 18 + ((sizeof(filename)+3) & ~3); //size in words
+  const u32 size = 21 + ((sizeof(filename)+3) & ~3); //size in words
   _Static_assert(size*4 <= STAGE1_MAX_SIZE, "Stage 1 size too big");
   const u32 stage1_base = PXI_MAIN_STACK_BASE-size*4;
 
@@ -143,9 +143,9 @@ u32 setupPxi11Stage1RopBuffer(u32* buffer) {
 
   buffer[21]  = KHC3DS_MAP_ADDR+0x80000;
   // final jump to khc with args:
-  // r0  = firmtid    (firmtid)
-  // r1 ~> buffer[18] (filename)
-  // r2  = fileoffset (offset)
+  // r0  = firmtid      (firmtid)
+  // r1  = &buffer[22]  (filename)
+  // r2  = fileoffset   (offset)
 
   strcpy((char*)&buffer[22], filename);
 
