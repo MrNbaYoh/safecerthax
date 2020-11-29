@@ -6,6 +6,7 @@ struct heap_chunk {
   u32 size;
   struct heap_chunk* prev;
   struct heap_chunk* next;
+  u8 data[0];
 };
 
 extern void* heapAllocate(u32 size);

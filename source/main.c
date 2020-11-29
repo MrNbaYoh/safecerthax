@@ -74,7 +74,6 @@ void pximcShutdownReply(void* arg) {
 }
 
 void* pximcShutdownHook(u32* cmdbuf) {
-
   u32 khc_arm9_offset = khc_buf->arm9_bin_addr - khc_buf->base_addr;
   struct khc_arm9_hdr* arm9_hdr =
     (struct khc_arm9_hdr*)((u8*)khc_buf + khc_arm9_offset);
@@ -89,5 +88,4 @@ void* pximcShutdownHook(u32* cmdbuf) {
 
   khc_entry();
   __builtin_unreachable();
-  //cmdbuf[0] = 0xFFFF0000;
 }

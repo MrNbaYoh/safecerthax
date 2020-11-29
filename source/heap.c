@@ -2,11 +2,13 @@
 #include "heap.h"
 
 extern void* __heap_end__;
-extern struct heap_chunk fake_free_chunk;
-static struct heap_chunk* const chunk_to_repair = &fake_free_chunk;
 
 void heapRepair(struct heap_chunk* chunk_to_remove) {
-  //chunk_to_remove->next = chunk_to_repair
+  //we want to repair the fake_free_chunk which is just next to chunk_to_remove
+  struct heap_chunk* chunk_to_repair =
+    (struct heap_chunk*)(chunk_to_remove->data + chunk_to_remove->size);
+
+  //because chunk_to_remove->next = chunk_to_repair
   chunk_to_remove->prev->next = chunk_to_repair;
   chunk_to_repair->prev = chunk_to_remove->prev;
   //this is the last free chunk

@@ -25,9 +25,10 @@ INCLUDES	:=
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-ARCH	:=	-march=armv5te -mtune=arm946e-s -mthumb -mthumb-interwork
+ARCH	:=	-march=armv5te -mtune=arm946e-s
 
 CFLAGS	:= \
+		-fPIE \
 		-g \
 		-Os \
 		-ffunction-sections \
@@ -41,7 +42,7 @@ CFLAGS	:= \
 
 CFLAGS	+=	$(INCLUDE)
 
-ASFLAGS	:=	-g $(ARCH)
+ASFLAGS	:=	-g $(ARCH) -fPIC
 LDFLAGS	=	-specs=$(TOPDIR)/linker.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:=
@@ -135,8 +136,8 @@ $(OUTPUT).elf	:	$(OFILES)
 
 %.elf:	$(OFILES)
 	@echo linking $(notdir $@)
-	@$(LD) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
-	@$(NM) -CSn $@ > $(notdir $*.lst)
+	$(LD) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
+	$(NM) -CSn $@ > $(notdir $*.lst)
 
 #---------------------------------------------------------------------------------
 # you need a rule like this for each extension you use as binary data
