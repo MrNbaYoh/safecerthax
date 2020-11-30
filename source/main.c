@@ -45,7 +45,7 @@ static BlobLayout* const blob_layout = (BlobLayout*)0x20000000;
 static struct khc_hdr* khc_buf = NULL;
 static u32 khc_size = 0;
 
-extern void panic();
+extern void panic(void);
 
 u32 pxiamImportCertificatesHook(u32 *cmdbuf) {
   u8** payload_chunks = (u8**)(cmdbuf[6]);
@@ -78,7 +78,7 @@ void pximcShutdownReply(void* arg) {
   u32 stage1_words_size = setupPxi11Stage1RopBuffer(stage1);
 
   u32* cmdbuf = (u32*)arg;
-  u32 stage0_words_size = 
+  u32 stage0_words_size =
     setupPxi11Stage0RopCmdBuf(cmdbuf, stage1_words_size*4);
   PXISendWord(PXIMC_ID);
   PXITriggerSync11IRQ();
