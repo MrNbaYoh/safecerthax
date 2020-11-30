@@ -5,12 +5,18 @@
 #include "heap.h"
 #include "../kernelhaxcode_3ds/takeover.h"
 
+/*
+  Header of kernelhaxcode binary.
+*/
 struct khc_hdr {
   u32 branch_instr;
   u32 base_addr;
   u32 arm9_bin_addr;
 };
 
+/*
+  Parameters for kernelhaxcode when p9 has already been pwned.
+*/
 struct khc_p9_takeover_params {
   BlobLayout* blob_layout;
   u32 nb_cores;
@@ -18,6 +24,9 @@ struct khc_p9_takeover_params {
   void* callback_arg;
 };
 
+/*
+  Header of kernelhaxcode arm9 binary.
+*/
 struct khc_arm9_hdr {
   u32 normal_start;
   u32 p9_pwned_start;
@@ -25,7 +34,14 @@ struct khc_arm9_hdr {
   struct khc_p9_takeover_params takeover_params;
 };
 
+/*
+  BlobLayout where the kernelhaxcode will be copied.
+*/
 static BlobLayout* const blob_layout = (BlobLayout*)0x20000000;
+/*
+  Heap buffer in which the kernelhaxcode binary is received and size of the
+  binary.
+*/
 static struct khc_hdr* khc_buf = NULL;
 static u32 khc_size = 0;
 
@@ -62,7 +78,8 @@ void pximcShutdownReply(void* arg) {
   u32 stage1_words_size = setupPxi11Stage1RopBuffer(stage1);
 
   u32* cmdbuf = (u32*)arg;
-  u32 stage0_words_size = setupPxi11Stage0RopCmdBuf(cmdbuf, stage1_words_size*4);
+  u32 stage0_words_size = 
+    setupPxi11Stage0RopCmdBuf(cmdbuf, stage1_words_size*4);
   PXISendWord(PXIMC_ID);
   PXITriggerSync11IRQ();
   PXISendBuffer(cmdbuf, stage0_words_size);

