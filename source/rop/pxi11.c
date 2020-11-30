@@ -152,6 +152,6 @@ u32 setupPxi11Stage1RopBuffer(u32* buffer) {
   return size;
 }
 
-inline u32 stage1MaxSize() {
+inline u32 stage1MaxSize(void) {
   return STAGE1_MAX_SIZE;
 }
