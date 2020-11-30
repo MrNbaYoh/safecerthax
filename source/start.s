@@ -40,7 +40,7 @@
   | 080C5DE4:   0x08084E08+1  <return address (POP_R4R5R6PC_ADDR)>        |
   |                                                                       |
   |------------------------ FreeToHeap stack frame -----------------------|
-  | 080C5DE8:   0x08??????    <ptr to new_free_chunk (contains our code)> |                                               |
+  | 080C5DE8:   0x08??????    <ptr to new_free_chunk (contains our code)> |
   | 080C5DEC:   ...                                                       |
   | 080C5DF0:   ...                                                       |
   | 080C5DF4:   0x08??????    <pointer to _start (popped to pc)>          |
