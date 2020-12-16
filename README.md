@@ -1,4 +1,4 @@
-# safecerthax
+# ![safecerthax logo](https://safecerthax.rocks/img/cover.png)
 safecerthax is a remote ARM9 & ARM 11 kernel exploit for the Original Nintendo 3DS (O3DS-only) SAFE_FIRM.
 For more information on safecerthax, please visit the [safecerthax website](https://safecerthax.rocks).
 
