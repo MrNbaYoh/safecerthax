@@ -79,7 +79,7 @@ void pximcShutdownReply(void* arg) {
 
   u32* cmdbuf = (u32*)arg;
   u32 stage0_words_size =
-    setupPxi11Stage0RopCmdBuf(cmdbuf, stage1_words_size*4);
+    setupPxi11Stage0RopCmdBuf(cmdbuf);
   PXISendWord(PXIMC_ID);
   PXITriggerSync11IRQ();
   PXISendBuffer(cmdbuf, stage0_words_size);
