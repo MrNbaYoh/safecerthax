@@ -28,8 +28,10 @@
 
 
 /*
-  This is the entry point.
-  Here's the stack state when jumping to _start:
+  This is the entry point. We detail how we get code execution in comments on
+  the free_fake_chunk section below in this file.
+
+  Here's the state of the stack when jumping to _start:
 
   |---------------------- RecycleRegion stack frame ----------------------|
   | 080C5DD0:   0x08??????    <ptr to new_free_chunk (contains our code)> |
@@ -50,9 +52,9 @@
 
   We gain control when returning from RecycleRegion, therefore we are "hooking"
   the execution flow of FreeToHeap. So we first set sp = 0x080C5DE8 to match
-  with the FreeToHeap function stack frame, then we do our things and eventually
-  we return to the actual service code by doing 'pop {r2-r6, pc}' which is the
-  return instruction of FreeToHeap.
+  with the FreeToHeap function stack frame, then we do *our things* and
+  eventually we return to the actual service code by doing 'pop {r2-r6, pc}'
+  which is the return instruction of FreeToHeap.
 */
 
 .section    .text.start, "ax", %progbits
@@ -95,7 +97,7 @@ _start:
 
 
 /*
-  Install hooks for PXIAM:PXIAM:ImportCertificates and PXIMC:Shutdown command
+  Install hooks for PXIAM:ImportCertificates and PXIMC:Shutdown command
   handlers.
 */
 installHooks:
@@ -259,7 +261,7 @@ heapAllocate:
   | 080C5DFC:   0x08053B3E+1  <return address>                              |
   |-------------------------------------------------------------------------|
 
-  So when returning from RecycleRegion, we directly jump to _start!
+  So when we return from RecycleRegion, we directly jump to _start!
 */
 .section  .fake_free_chunk
 fake_free_chunk:
