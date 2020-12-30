@@ -37,7 +37,7 @@ struct khc_arm9_hdr {
 /*
   BlobLayout where the kernelhaxcode will be copied.
 */
-static BlobLayout* const blob_layout = (BlobLayout*)0x20000000;
+static BlobLayout* const blob_layout = (BlobLayout*)0x24000000;
 /*
   Heap buffer in which the kernelhaxcode binary is received and size of the
   binary.
@@ -72,7 +72,6 @@ u32 pxiamImportCertificatesHook(u32 *cmdbuf) {
 
 void pximcShutdownReply(void* arg) {
   const u32 PXIMC_ID = 0x0;
-  memcpy(blob_layout->code, khc_buf, khc_size);
 
   u32 stage1[stage1MaxSize()/4];
   u32 stage1_words_size = setupPxi11Stage1RopBuffer(stage1);
@@ -86,6 +85,8 @@ void pximcShutdownReply(void* arg) {
 
   PXISendWord(0xDEAD);
   while(!PXIIsSendFIFOEmpty()); //wait for PXIReset on arm11 side
+
+  memcpy(blob_layout->code, khc_buf, khc_size);
 
   PXISendBuffer(stage1, stage1_words_size);
 }
